@@ -1,9 +1,11 @@
+# Path to project cmake files
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/cmake)
+# Include utility and Python build functions
 include(Util)
 include(Python)
 
+# Fix for finding the correct Python version on Apple
 if (APPLE)
-    # Apple hard sets these variables for system Python
     unset(PYTHON_LIBRARY CACHE)
     unset(PYTHON_INCLUDE_DIR CACHE)
     unset(PYTHON_LIBRARIES CACHE)
@@ -27,7 +29,32 @@ find_package(Threads REQUIRED)
 
 if (Qt5_POSITION_INDEPENDENT_CODE)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif ()
+endif()
+
+## Third Party files
+set(THIRD_PARTY_COMMON
+        third-party/qextserialport.h
+        third-party/qextserialport_p.h
+        third-party/qextserialport_global.h
+        third-party/qextserialenumerator.h
+        third-party/qextserialenumerator_p.h
+        third-party/qextserialport.cpp
+        third-party/qextserialenumerator.cpp)
+if (WIN32)
+    set(THIRD_PARTY
+            third-party/qextserialenumerator_win.cpp
+            third-party/qextserialport_win.cpp)
+endif()
+if (APPLE)
+    set(THIRD_PARTY
+            third-party/qextserialenumerator_unix.cpp
+            third-party/qextserialport_unix.cpp)
+endif()
+if (UNIX)
+    set(THIRD_PARTY
+            third-party/qextserialenumerator_unix.cpp
+            third-party/qextserialport_unix.cpp code/video/recorder.h code/video/recorder.cpp)
+endif()
 
 file(GLOB_RECURSE SOURCE_FILES
         ${PROJECT_SOURCE_DIR}/code/*.cpp
@@ -54,9 +81,12 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 
 get_target_property(QtCore_location Qt5::Core LOCATION)
-add_executable(minotaur-cpp ${SOURCE_FILES} ${HEADER_FILES} ${FORM_FILES})
+add_executable(minotaur-cpp ${SOURCE_FILES} ${HEADER_FILES} ${FORM_FILES} code/gui/griddisplay.cpp code/gui/griddisplay.h)
 
-# Uncomment this line to compile in debug mode
+# Qt5 modules
+qt5_use_modules(minotaur-cpp SerialPort)
+
+# Supply cmake argument -D NO_DEBUG=ON to disable console debug output
 option(NO_DEBUG "Build minotaur without debugging output" OFF)
 if (NO_DEBUG)
     log("Building without debugging")
@@ -66,19 +96,34 @@ else ()
     log("Building with debugging on")
 endif ()
 
+# Find and link OpenCV 3 package
+find_package(OpenCV 3 REQUIRED)
+include_directories(${OpenCV_INCLUDE_DIRS})
+target_link_libraries(minotaur-cpp ${OpenCV_LIBS})
+
+# Supply cmake argument -D NO_CONTRIB=ON to disable tracking module
+option(NO_CONTRIB "Build minotaur without OpenCV contrib modules" OFF)
+include(CheckIncludeFileCXX)
+# Check for the OpenCV tracking contrib module
+check_include_file_cxx(opencv2/tracking.hpp HAVE_OPENCV_TRACKER)
+if (NO_CONTRIB OR NOT HAVE_OPENCV_TRACKER)
+    target_compile_definitions(minotaur-cpp PRIVATE TRACKER_OFF)
+    log("Building without OpenCV tracking module")
+endif ()
+
 # Attempt to find GOTURN files
 include(Goturn)
 if (${GOTURN_FILES_FOUND})
     target_compile_definitions(minotaur-cpp PRIVATE GOTURN_FOUND)
 endif ()
 
-# Find and link OpenCV 3 package
-find_package(OpenCV 3 REQUIRED)
-include_directories(${OpenCV_INCLUDE_DIRS})
-target_link_libraries(minotaur-cpp ${OpenCV_LIBS})
-
 # Link Qt, Python, and Thread libraries
-target_link_libraries(minotaur-cpp Qt5::Widgets Qt5::Core Qt5::Gui Qt5::Multimedia Qt5::MultimediaWidgets)
+target_link_libraries(minotaur-cpp
+        Qt5::Widgets
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Multimedia
+        Qt5::MultimediaWidgets)
 target_link_libraries(minotaur-cpp ${PYTHON_LIBRARIES})
 target_link_libraries(minotaur-cpp "${CMAKE_THREAD_LIBS_INIT}")
 

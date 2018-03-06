@@ -11,11 +11,13 @@
 #include "../controller/controller.h"
 #include "../controller/solenoid.h"
 #include "../controller/simulator.h"
+#include "../camera/cameradisplay.h"
 
 #include "simulatorwindow.h"
 #include "actionabout.h"
 #include "scriptwindow.h"
-#include "camera.h"
+#include "serialmonitor.h"
+#include "serialbox.h"
 
 #define DEFAULT_TITLE "minotaur"
 
@@ -27,7 +29,14 @@ class MainWindow : public QMainWindow {
 Q_OBJECT
 
 public:
-    explicit MainWindow(QWidget *parent = nullptr, const char *title = DEFAULT_TITLE);
+    explicit MainWindow(
+        int argc,
+        char *argv[],
+        QWidget *parent = nullptr,
+        const char *title = DEFAULT_TITLE
+    );
+
+    ~MainWindow() override;
 
     QTextEdit *getLogView();
 
@@ -35,15 +44,24 @@ public:
 
     void keyReleaseEvent(QKeyEvent *) override;
 
-    ~MainWindow() override;
 
 public Q_SLOTS:
 
-    void openPythonInterpreter();
+    /**
+     * Clear the logging output, if the logging
+     * has been set to the output field.
+     */
+    void clearLogOutput();
 
-    void openActionAbout();
+    /**
+     * Invert the x-axis of the currently active controller.
+     */
+    void invertControllerX();
 
-    void openCameraDisplay();
+    /**
+     * Invert the y-axis of the currently active controller;
+     */
+    void invertControllerY();
 
     inline void switchToSolenoid() { switchControllerTo(Controller::Type::SOLENOID); }
 
@@ -53,18 +71,20 @@ public Q_SLOTS:
 private Q_SLOTS:
 
     // Button click events
-    void onMoveButtonClicked();
+    void moveButtonClicked();
 
     // Mouse events
     void mousePressEvent(QMouseEvent *event) override;
 
 private:
-    Ui::MainWindow *ui;
+    std::unique_ptr<Ui::MainWindow> ui;
 
-    ScriptWindow *m_script_window;
-    SimulatorWindow *m_simulator_window;
-    ActionAbout *m_about_window;
-    CameraDisplay *m_camera_display;
+    std::unique_ptr<ScriptWindow> m_script_window;
+    std::unique_ptr<SimulatorWindow> m_simulator_window;
+    std::unique_ptr<ActionAbout> m_about_window;
+    std::unique_ptr<CameraDisplay> m_camera_display;
+    std::unique_ptr<SerialMonitor> m_serial_monitor;
+    std::unique_ptr<SerialBox> m_serial_box;
 
     Controller::Type m_controller_type;
 

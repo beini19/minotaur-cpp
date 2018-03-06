@@ -1,75 +1,134 @@
 #include "solenoid.h"
-#include <ostream>
 
-Solenoid::Solenoid(const QString& serial_port): Controller(1, 1) {
-    // TODO: change actuator setup to be used for general serial set up
-    if ( serial_port.isEmpty() ) {
-        // TODO: provide error if this does not succeed
-        stream.open("/dev/ttyACM1");        // manually changed to match port indicated in arduino IDE
-    } else {
-        stream.open(serial_port.toStdString());
-    }
+#include <QSerialPortInfo>
+
+Solenoid::Solenoid()
+    : Controller(true, true) {
+    // For convenience, attempt auto-detect connection at launch
+    attempt_connection();
+}
+
+Solenoid::Solenoid(
+    const QString &serial_port,
+    QSerialPort::BaudRate baud_rate
+)
+    : Controller(true, true) {
+    attempt_connection(serial_port, baud_rate);
 }
 
 Solenoid::~Solenoid() {
-    stream.close();
+    // Release connection if it is still open
+    if (m_serial.isOpen()) { m_serial.close(); }
 }
 
-void Solenoid::move(Vector2i dir, int timer) {
-    // TODO: user timer for movement control
-    bool success = true;
-#ifndef NDEBUG
-	Logger::log("Moving Solenoid controller", Logger::DEBUG);
-    Logger::log("Attempting move (" + std::to_string(dir.x_comp) + ", " + std::to_string(dir.y_comp) + ")",
-                Logger::DEBUG);
-#endif
-    try {
-        stream << vectorToBinary(dir);
-        stream.flush();
-    } catch (...) {
-        success = false;
-#ifndef NDEBUG
-        Logger::log("Unexpected exception", Logger::DEBUG);
-#endif
-    }
-
-    if (success) {
-        Logger::log("Moved " + dir.toString() + " in " + std::to_string(timer) + " milliseconds.", Logger::INFO);
+void Solenoid::attempt_connection(
+    const QString &serial_port,
+    QSerialPort::BaudRate baud_rate
+) {
+    Q_EMIT serial_status(SerialStatus::CONNECTING);
+    if (serial_port.isEmpty()) {
+        // Auto-detect Arduino port
+        QSerialPortInfo port_to_use;
+        bool found_port = false;
+        auto ports = QSerialPortInfo::availablePorts();
+        for (auto &port : ports) {
+            if (
+                !port.isBusy() && (port.description().contains("Arduino") ||
+                                   port.manufacturer().contains("Arduino"))
+            ) {
+                port_to_use = port;
+                found_port = true;
+                break;
+            }
+        }
+        if (!found_port) {
+            fatal() << "No Arduino port specified, failed to autodetect port";
+            Q_EMIT serial_status(SerialStatus::DISCONNECTED);
+            return;
+        }
+        log() << "Auto-detected Arduino port: " << port_to_use.portName();
+        // Use our auto-detected port info
+        m_serial.setPort(port_to_use);
     } else {
-        Logger::log("The movement " + dir.toString() + " could not be completed.", Logger::FATAL);
+        // Set the provided port name
+        m_serial.setPortName(serial_port);
+    }
+    m_serial.setBaudRate(baud_rate);
+    m_serial.setDataBits(QSerialPort::Data8);
+    m_serial.setParity(QSerialPort::NoParity);
+    m_serial.setStopBits(QSerialPort::OneStop);
+    m_serial.setFlowControl(QSerialPort::NoFlowControl);
+    if (!m_serial.open(QIODevice::ReadWrite)) {
+        fatal() << "Failed to open serial port: " << m_serial.portName();
+        Q_EMIT serial_status(SerialStatus::DISCONNECTED);
+    } else {
+        log() << "Opened serial port: " << m_serial.portName();
+        connect(&m_serial, &QSerialPort::readyRead, this, &Solenoid::readSerial);
+        Q_EMIT serial_status(SerialStatus::CONNECTED);
     }
 }
 
-int Solenoid::vectorToBinary(Vector2i dir) {
-    int direction = 0b0;
+void Solenoid::attempt_disconnect() {
+    if (m_serial.isOpen()) {
+        log() << "Disconnecting serial port";
+        m_serial.close();
+        Q_EMIT serial_status(SerialStatus::DISCONNECTED);
+    }
+}
 
-    switch(dir.x_comp) {
+void Solenoid::readSerial() {
+    QByteArray data = m_serial.readAll();
+    std::string msg = data.toStdString();
+    Q_EMIT serialRead(msg);
+}
+
+void Solenoid::__move_delegate(Vector2i dir, int) {
+#ifndef NDEBUG
+    debug() << "Moving Solenoid controller";
+    debug() << "Attempting to move " << dir;
+#endif
+    if (!m_serial.isOpen()) {
+        fatal() << "Failed to execute movement: serial port not open";
+        return;
+    }
+    char binary = vectorToBinary(dir);
+    m_serial.write(&binary, 1);
+    if (!m_serial.waitForBytesWritten(200)) {
+        fatal() << "Failed to execute movement: write timed out";
+    } else {
+        log() << "Movement sent";
+    }
+}
+
+bool Solenoid::is_connected() const {
+    return m_serial.isOpen();
+}
+
+const QSerialPort &Solenoid::serial_port() const {
+    return m_serial;
+}
+
+char Solenoid::vectorToBinary(Vector2i dir) {
+    int direction = 0b0;
+    switch (dir.y()) {
         case 1:
             direction = direction | Direction::UP;
             break;
         case -1:
             direction = direction | Direction::DOWN;
             break;
-        case 0:
-            // DO NOTHING
-            break;
         default:
-            Logger::log("Invalid direction x component", Logger::FATAL);
+            break;
     }
-
-    switch(dir.y_comp) {
+    switch (dir.x()) {
         case 1:
             direction = direction | Direction::RIGHT;
             break;
         case -1:
             direction = direction | Direction::LEFT;
             break;
-        case 0:
-            // DO NOTHING
-            break;
         default:
-            Logger::log("Invalid direction y component", Logger::FATAL);
+            break;
     }
-
-    return direction;
+    return static_cast<char>(direction);
 }
