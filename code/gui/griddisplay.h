@@ -31,6 +31,9 @@ public:
     static int default_weight();
     static int grid_size();
 
+    int x();
+    int y();
+
     GridDisplay(ImageViewer *image_viewer, CameraDisplay *camera_display);
 
     void mousePressEvent(QMouseEvent *ev) override;
@@ -58,12 +61,15 @@ public Q_SLOTS:
 
     void select_robot_position(QString);
 
+    void update_grid_location(double x, double y);
+
 protected Q_SLOTS:
 
     void button_clicked(int x, int y);
 
 private:
     void show_view();
+
     void draw_grid();
     void draw_buttons();
 
@@ -86,8 +92,13 @@ private:
 
     void is_valid_coord(vector2i &point);
 
+    void move_grid();
+
     int m_column_count;
     int m_row_count;
+
+    double m_x;
+    double m_y;
 
     array2d<GridButton *> m_button;
     array2d<int> m_square_selected;
@@ -96,6 +107,8 @@ private:
     std::unique_ptr<QGraphicsView> m_view;
 
     CameraDisplay *m_camera_display;
+
+    ImageViewer *m_image_viewer;
 
     bool m_grid_displayed = false;
 

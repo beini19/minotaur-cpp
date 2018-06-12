@@ -395,7 +395,7 @@ array2d<int> nrg::grid_kernelize(
     weak_ref<param_manager> pm
 ) {
     int wall = GridDisplay::default_weight();
-    //constexpr int wall = grid_display->default_weight();
+
     int wp0 = pm->wall_penalty_0;
     int wp1 = pm->wall_penalty_1;
     int wp2 = pm->wall_penalty_2;
